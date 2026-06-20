@@ -30,19 +30,21 @@ model **cannot bypass**, rather than rules it is merely asked to remember.
 
 ## Current status
 
-**Modules 1–2 are built.** M1 (Governance Core): rules-as-data, deterministic
-gates, fail-closed verdicts, and a tamper-evident audit log. M2 (Scheduler +
-governance boundary): a scheduler that plans tool sequences but holds no
-execution capability — every step must clear a permit through a swappable
-boundary. See the roadmap for what's next. (Phase 0's demo remains under `demo/`
-as the validated reference.)
+**Modules 1–3 are built — a runnable single-task engine.** M1 (Governance Core):
+rules-as-data, deterministic gates, fail-closed verdicts, tamper-evident audit
+log. M2 (Scheduler + boundary): plans tool sequences but holds no execution
+capability — every step clears a permit through a swappable boundary. M3 (Task
+Runtime): the PDCA loop + state machine that gates each step, executes only
+cleared steps (mock executor), and archives a replayable trajectory. See the
+roadmap for what's next. (Phase 0's demo remains under `demo/` as reference.)
 
 ```bash
-# Run the production governance engine on the founding scenarios
-python3 examples/governance_demo.py
+# Run whole tasks through the PDCA loop end-to-end
+python3 examples/runtime_demo.py
 
-# Plan a task and walk it through the governance boundary
-python3 examples/scheduler_demo.py
+# Or see the layers individually:
+python3 examples/governance_demo.py   # the governance engine on the founding cases
+python3 examples/scheduler_demo.py    # planning + the governance boundary
 
 # Run the test suite
 pip install -e ".[dev]"

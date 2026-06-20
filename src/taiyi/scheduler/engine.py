@@ -52,6 +52,32 @@ class SchedulerEngine:
     def plan(self, prompt: str, scenario: str) -> ExecutionPlan:
         return self._planner.plan(prompt, scenario)
 
+    def request_permit(
+        self,
+        step: PlanStep,
+        scenario: str,
+        *,
+        actor: str = "scheduler",
+        user_id: str = "unknown",
+        task_id: str | None = None,
+    ) -> PermitResponse:
+        """Ask the governance boundary whether a single step may run.
+
+        This is the scheduler's only path to clearance — it goes through the
+        PermitClient and has no fallback. The Task Runtime calls this per step to
+        drive the interleaved permit→execute PDCA loop.
+        """
+        return self._permits.issue_permit(
+            PermitRequest(
+                tool=step.tool,
+                args=step.args,
+                scenario=scenario,
+                actor=actor,
+                user_id=user_id,
+                task_id=task_id,
+            )
+        )
+
     def clear_plan(
         self,
         plan: ExecutionPlan,
@@ -66,15 +92,8 @@ class SchedulerEngine:
         clearance = PlanClearance(terminal_verdict=Verdict.ALLOW)
 
         for step in plan.steps:
-            resp = self._permits.issue_permit(
-                PermitRequest(
-                    tool=step.tool,
-                    args=step.args,
-                    scenario=scenario,
-                    actor=actor,
-                    user_id=user_id,
-                    task_id=task_id,
-                )
+            resp = self.request_permit(
+                step, scenario, actor=actor, user_id=user_id, task_id=task_id
             )
             clearance.decisions.append(StepDecision(step=step, response=resp))
 

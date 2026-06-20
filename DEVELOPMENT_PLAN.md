@@ -39,7 +39,7 @@ Phase 0 left us at **L1→L2**; this plan drives toward **L4 (closed loop)**.
 |---|--------|--------|----------------|--------------|
 | **M1** | **Governance Core (rules-as-data)** | ✅ **Done** | L2 | No |
 | **M2** | **Scheduler + governance boundary** | ✅ **Done** | L2 | No |
-| M3 | Task Runtime (PDCA loop + state machine) | Planned | L2 | No |
+| **M3** | **Task Runtime (PDCA loop + state machine)** | ✅ **Done** | L2 | No |
 | M4 | Real LLM provider layer | Planned | L2 | **Yes (API keys)** |
 | M5 | Tool Runtime (sandbox, credential isolation, SSRF) | Planned | L2 | No |
 | M6 | Validation Engine (L4, per-task checklists) | Planned | L3 | Partly |
@@ -111,13 +111,33 @@ every step provably routes through the `PermitClient`; the scheduler exposes no
 execution capability.
 **Depends on.** M1.
 
-### M3 — Task Runtime (PDCA loop + state machine)
+### M3 — Task Runtime (PDCA loop + state machine) ✅ Done
 **Goal.** Wire scheduler + governance into the PDCA main loop with the documented
 state machine (PENDING→…→COMPLETED/REJECTED/NEEDS_REVIEW), producing a
-`TaskContext` and archiving a trajectory. Executor still mocked.
-**Acceptance.** Single tasks run end-to-end across all six scenarios with correct
-terminal states; trajectory is replayable from the audit log.
+`TaskContext` and archiving a replayable trajectory. Executor still mocked.
+
+**Delivered.**
+- `taiyi.runtime.state` — the `TaskState` machine from Technical Architecture §3.3.
+- `taiyi.runtime.context` — `TaskContext` / `StepResult` flowing through the loop.
+- `taiyi.runtime.executor` — `Executor` interface + side-effect-free `MockExecutor`
+  (the real sandboxed executor is M5). Only cleared steps are ever executed.
+- `taiyi.runtime.engine` — `TaskRuntime` drives interleaved permit→execute PDCA;
+  shares one `AuditLog` with governance, so permit decisions and execution events
+  land in a single hash-chained trajectory. `replay_task` reconstructs any task.
+- `SchedulerEngine.request_permit` added (per-step clearance for the loop).
+- 8 tests + `examples/runtime_demo.py`.
+
+**Acceptance (met).** All six scenarios reach the correct terminal state
+(COMPLETED / REJECTED / NEEDS_REVIEW); a half-finished task keeps its executed
+steps (weekly report runs the query, suspends the notify); the commit denied by
+the identity red line is never executed; each task replays from the audit chain
+and the chain verifies after runs.
 **Depends on.** M2.
+
+> **M1–M3 together** are a runnable single-task engine: a request is planned,
+> gated step-by-step, executed (mock) only when cleared, and archived to a
+> tamper-evident trajectory. M4 makes the planner/executor real (and starts
+> spending money); M5 makes execution real and sandboxed.
 
 ### M4 — Real LLM provider layer  💲
 **Goal.** Replace `MockLLM` with a real provider abstraction (default: latest
