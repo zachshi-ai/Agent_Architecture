@@ -38,7 +38,7 @@ Phase 0 left us at **L1→L2**; this plan drives toward **L4 (closed loop)**.
 | # | Module | Status | Maturity after | Costs money? |
 |---|--------|--------|----------------|--------------|
 | **M1** | **Governance Core (rules-as-data)** | ✅ **Done** | L2 | No |
-| M2 | Scheduler + governance boundary | Planned | L2 | No |
+| **M2** | **Scheduler + governance boundary** | ✅ **Done** | L2 | No |
 | M3 | Task Runtime (PDCA loop + state machine) | Planned | L2 | No |
 | M4 | Real LLM provider layer | Planned | L2 | **Yes (API keys)** |
 | M5 | Tool Runtime (sandbox, credential isolation, SSRF) | Planned | L2 | No |
@@ -87,14 +87,28 @@ fail closed.
 
 ---
 
-### M2 — Scheduler + governance boundary
+### M2 — Scheduler + governance boundary ✅ Done
 **Goal.** A scheduler (the decision-maker) that plans a tool sequence for a task
 and **must obtain a permit** for each step. Cements the request/permit contract
 so governance and scheduling can later run as separate processes unchanged.
-**Scope.** Pluggable `Planner` interface (port the demo's keyword router as the
-first implementation); the scheduler holds no execution capability of its own.
-**Acceptance.** A planned step cannot execute without an `ALLOW` permit; a DENY
-halts the plan; a NEEDS_REVIEW suspends it without losing completed steps.
+
+**Delivered.**
+- `taiyi.governance.client` — the `PermitClient` boundary (a Protocol) plus
+  `LocalPermitClient`, the in-process implementation. The scheduler depends only
+  on this one method; swapping in an IPC/gRPC client later changes nothing for
+  the scheduler. `LocalPermitClient` exposes only `issue_permit`, so the
+  scheduler gets no handle on rules or the audit log — it cannot self-grant.
+- `taiyi.scheduler.planner` — a pluggable `Planner` interface with `KeywordPlanner`
+  (a faithful port of the Phase 0 router), `ExecutionPlan`, and `PlanStep`.
+- `taiyi.scheduler.engine` — `SchedulerEngine` plans and `clear_plan`s steps
+  through the boundary, returning a `PlanClearance`. It has **no execute method**.
+- 9 tests + `examples/scheduler_demo.py`.
+
+**Acceptance (met).** No step clears without an `ALLOW`; a DENY halts the plan
+immediately; a NEEDS_REVIEW suspends it while preserving already-cleared steps
+(e.g. the weekly-report SQL query survives when the outbound notify is held);
+every step provably routes through the `PermitClient`; the scheduler exposes no
+execution capability.
 **Depends on.** M1.
 
 ### M3 — Task Runtime (PDCA loop + state machine)

@@ -8,6 +8,7 @@ it only decides whether a requested action may proceed.
 from taiyi.governance.rules import Rule, RuleError
 from taiyi.governance.loader import load_rules, DEFAULT_RULES_DIR
 from taiyi.governance.engine import GovernanceEngine
+from taiyi.governance.client import PermitClient, LocalPermitClient
 
 __all__ = [
     "Rule",
@@ -15,4 +16,6 @@ __all__ = [
     "load_rules",
     "DEFAULT_RULES_DIR",
     "GovernanceEngine",
+    "PermitClient",
+    "LocalPermitClient",
 ]

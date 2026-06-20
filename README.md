@@ -30,13 +30,19 @@ model **cannot bypass**, rather than rules it is merely asked to remember.
 
 ## Current status
 
-**Module 1 — Governance Core is built.** Rules-as-data, deterministic gates,
-fail-closed verdicts, and a tamper-evident audit log. See the roadmap for what's
-next. (Phase 0's demo remains under `demo/` as the validated reference.)
+**Modules 1–2 are built.** M1 (Governance Core): rules-as-data, deterministic
+gates, fail-closed verdicts, and a tamper-evident audit log. M2 (Scheduler +
+governance boundary): a scheduler that plans tool sequences but holds no
+execution capability — every step must clear a permit through a swappable
+boundary. See the roadmap for what's next. (Phase 0's demo remains under `demo/`
+as the validated reference.)
 
 ```bash
 # Run the production governance engine on the founding scenarios
 python3 examples/governance_demo.py
+
+# Plan a task and walk it through the governance boundary
+python3 examples/scheduler_demo.py
 
 # Run the test suite
 pip install -e ".[dev]"
