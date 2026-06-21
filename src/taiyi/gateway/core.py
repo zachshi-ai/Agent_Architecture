@@ -17,6 +17,7 @@ from taiyi.core.audit import AuditLog
 from taiyi.governance import GovernanceEngine, LocalPermitClient
 from taiyi.iteration import IterationEngine
 from taiyi.memory import MemoryEngine
+from taiyi.multi_agent import ExpertCommittee
 from taiyi.observability import Observability
 from taiyi.runtime import TaskContext, TaskRuntime
 from taiyi.runtime.executor import Executor
@@ -37,6 +38,7 @@ class Gateway:
         memory: MemoryEngine,
         observability: Observability | None = None,
         iteration: IterationEngine | None = None,
+        committee: ExpertCommittee | None = None,
     ):
         self.runtime = runtime
         self.matcher = scenario_matcher
@@ -44,6 +46,7 @@ class Gateway:
         self.memory = memory
         self.obs = observability
         self.iteration = iteration
+        self.committee = committee
 
     def submit(
         self,
@@ -94,4 +97,5 @@ def build_gateway(
         memory=memory,
         observability=observability,
         iteration=iteration,
+        committee=ExpertCommittee(),
     )

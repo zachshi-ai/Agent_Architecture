@@ -63,6 +63,8 @@ class GatewayApp:
             return self._tasks(payload)
         if method == "POST" and path == "/v1/chat/completions":
             return self._chat(payload)
+        if method == "POST" and path == "/v1/review":
+            return self._review(payload)
         return 404, {"error": "not found"}
 
     # --- routes --------------------------------------------------------------
@@ -84,6 +86,15 @@ class GatewayApp:
             return 400, {"error": "no user message"}
         ctx = self.gateway.submit(prompt, scenario=payload.get("scenario"))
         return 200, to_openai_response(ctx, payload.get("model", "taiyi"))
+
+    def _review(self, payload: dict) -> tuple[int, dict]:
+        if self.gateway.committee is None:
+            return 404, {"error": "multi-agent review not enabled"}
+        subject = payload.get("subject")
+        if not subject:
+            return 400, {"error": "missing subject"}
+        result = self.gateway.committee.review(subject, payload.get("context") or {})
+        return 200, result.to_dict()
 
     @staticmethod
     def _identity(headers) -> str:

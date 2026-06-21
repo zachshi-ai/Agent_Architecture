@@ -30,8 +30,9 @@ model **cannot bypass**, rather than rules it is merely asked to remember.
 
 ## Current status
 
-**Modules 1–12 are built — the full core, a closed-loop Agent OS at maturity level
-L4.** Every core layer of the architecture is implemented and tested (109 tests).
+**Modules 1–13 are built — the full core plus multi-agent review, a closed-loop
+Agent OS at maturity level L4.** Every core layer of the architecture is
+implemented and tested (117 tests).
 A request enters via the CLI or HTTP, is anchored to a business goal, matched to a
 scenario, planned (rule- or LLM-driven), gated step-by-step by governance, executed
 for real but sandboxed only when cleared, independently validated (a failed check
@@ -51,11 +52,16 @@ a passing quality gate**); M9 Gateway (stdlib HTTP + CLI, auth/rate-limit,
 OpenAI-compatible endpoint); M10 Value Stream (dual-mode goal anchoring, value-
 contribution scoring, bottleneck detection); M11 Observability (per-task traces,
 Prometheus `/metrics`, structured logs); M12 Iteration/OODA (trajectory analysis,
-human-approved rule patches, gated skill auto-generation, validator regression set).
-What remains is deferred breadth — see the roadmap. (Phase 0's demo remains under
-`demo/` as reference.)
+human-approved rule patches, gated skill auto-generation, validator regression set);
+M13 Multi-agent (expert matrix with red-line veto and precedence arbitration —
+collaboration with gates, not agent chat). What remains is deferred breadth (M14:
+channel breadth, MCP server, Skill market) — see the roadmap. (Phase 0's demo
+remains under `demo/` as reference.)
 
 ```bash
+# Multi-agent review: red-line veto + precedence arbitration (contract review)
+python3 examples/multi_agent_demo.py
+
 # Iteration/OODA: a failure becomes a permanent check; repeated work becomes a skill
 python3 examples/iteration_demo.py
 

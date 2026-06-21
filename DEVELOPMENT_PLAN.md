@@ -49,7 +49,7 @@ Phase 0 left us at **L1→L2**; this plan drives toward **L4 (closed loop)**.
 | **M10** | **Value Stream (H4: goal anchoring, scoring)** | ✅ **Done** | L3 | No (offline) |
 | **M11** | **Observability (H3: traces, metrics, logs)** | ✅ **Done** | L3 | No |
 | **M12** | **Iteration / OODA (L5) + Skill auto-generation** | ✅ **Done** | **L4** | No (offline) |
-| M13 | Multi-agent (expert matrix + arbitration) | Deferred | L4 | Yes |
+| **M13** | **Multi-agent (expert matrix + arbitration)** | ✅ **Done** | L4 | No (offline) |
 | M14 | Channel breadth + MCP server + Skill market | Deferred | L4 | Yes |
 
 > Rough phase mapping: **M1–M5 = Phase 1** (trustworthy single-task vertical
@@ -368,10 +368,31 @@ eligible auto-generated skill; the validator gets a regression set with
 false-pass/false-block tracking. **Maturity → L4 (closed loop).**
 **Depends on.** M6, M8, M11.
 
-### M13 — Multi-agent (expert matrix + arbitration)  *(deferred)*
-Expert agents (security/compliance/business/perf/UX) with red-line veto and the
-precedence-based arbitration from Design Doc §5.3. Highest complexity; deferred
-until the single-agent slice is solid.
+### M13 — Multi-agent (expert matrix + arbitration) ✅ Done
+**Goal.** Expert agents with red-line veto and precedence-based arbitration
+(Design Doc §4.5 / §5.3) — collaboration with gates, not free-form agent chat.
+
+**Delivered.**
+- `taiyi.multi_agent.experts` — the `Expert` interface, `ExpertOpinion`, and
+  deterministic `MarkerExpert` stand-ins; `builtin_experts()` is the five-domain
+  matrix (security/compliance/business with veto authority; performance/UX
+  advisory-only), with the design's default precedence. A live LLM-backed expert
+  implements the same interface — the arbitration math is unchanged.
+- `taiyi.multi_agent.arbitration` — `arbitrate()`: no veto → APPROVED (advisories
+  non-binding); any veto → highest-precedence veto wins, task paused + escalated;
+  same-precedence cross-domain conflict → fail closed → NEEDS_HUMAN.
+- `taiyi.multi_agent.committee` — `ExpertCommittee.review` + `reconsider_once`
+  (one amendment retry; a persistent veto becomes an L5 system defect, bounded).
+- Gateway `/v1/review` endpoint; default committee wired into `build_gateway`.
+- 8 tests + `examples/multi_agent_demo.py` (reproduces the design's contract-review
+  scenario C).
+
+**Acceptance (met).** A red-line expert's veto is a one-vote pause that escalates;
+advisory experts never block; a higher-precedence veto wins a cross-level conflict;
+a same-precedence hard conflict fails closed to a human; reconsideration resolves
+an amended proposal or, if not, records a system defect.
+**Decision.** Built offline-first (deterministic marker experts), so it is
+zero-cost; the live multi-expert LLM path is the opt-in. **Depends on.** M3.
 
 ### M14 — Channel breadth + MCP server + Skill market  *(deferred)*
 P1/P2 channels (Feishu/DingTalk/Telegram/Discord/Slack/…), Taiyi-as-MCP-server,
