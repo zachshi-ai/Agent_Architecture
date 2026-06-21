@@ -52,6 +52,7 @@ Phase 0 left us at **L1→L2**; this plan drives toward **L4 (closed loop)**.
 | **M13** | **Multi-agent (expert matrix + arbitration)** | ✅ **Done** | L4 | No (offline) |
 | **M14** | **MCP server + channel adapter + Skill market** | ✅ **Done** | L4 | No (live channels = opt-in) |
 | **M15** | **Configuration & deployment (taiyi.yaml + Docker)** | ✅ **Done** | L4 | No |
+| **M16** | **Iterative agent loop (reason → act → observe)** | ✅ **Done** | L4 | No (live LLM = opt-in) |
 
 > Rough phase mapping: **M1–M5 = Phase 1** (trustworthy single-task vertical
 > slice with a real model), **M6–M9 = Phase 2**, **M10–M12 = Phase 3**,
@@ -368,6 +369,28 @@ became a permanent check; a repeated shape sediments into a gated, production-
 eligible auto-generated skill; the validator gets a regression set with
 false-pass/false-block tracking. **Maturity → L4 (closed loop).**
 **Depends on.** M6, M8, M11.
+
+### M16 — Iterative agent loop ✅ Done
+**Goal.** Turn plan-once execution into a real agent: reason → act → observe →
+repeat, with every action still gated. The "framework → agent" piece.
+
+**Delivered.**
+- `taiyi.agent.AgentRuntime` — a step-by-step loop: the model proposes one tool
+  call, **`scheduler.request_permit` gates it**, it executes, the result is fed
+  back into the conversation, and the model decides the next step. Stops when the
+  model answers with no tool call (validated first) or the step budget runs out.
+  Reuses the same governance boundary, executor, validation, memory, value-stream,
+  observability, and iteration components as `TaskRuntime`.
+- A validation failure on "done" is fed back as an observation so the agent can
+  correct itself within budget.
+- 5 tests + `examples/agent_demo.py`.
+
+**Acceptance (met).** A multi-step task runs to COMPLETED with results fed back; a
+prompt-injected override mid-loop is DENIED and never executes (governance holds
+step by step); a `git push` mid-loop suspends as NEEDS_REVIEW; a validation failure
+feeds back and the agent recovers; the step budget bounds the loop (FAILED).
+**The live LLM is the opt-in** that drives this for real — same control flow.
+**Depends on.** M4, M5, M6.
 
 ### M15 — Configuration & deployment ✅ Done
 **Goal.** Make Taiyi self-operable: configure an instance without editing Python,
