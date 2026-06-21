@@ -43,7 +43,7 @@ Phase 0 left us at **L1→L2**; this plan drives toward **L4 (closed loop)**.
 | **M4** | **LLM provider layer (offline-first)** | ✅ **Done** | L2 | No (live = opt-in) |
 | **M5** | **Tool Runtime (sandbox, credential isolation, SSRF)** | ✅ **Done** | L2 | No |
 | **M6** | **Validation Engine (L4, per-task checklists)** | ✅ **Done** | **L3** | No (offline) |
-| M7 | Memory (5-layer: SQLite/FTS5/vector/Honcho) | Planned | L3 | Partly |
+| **M7** | **Memory (5-layer: SQLite/FTS5/vector/Honcho)** | ✅ **Done** | L3 | No (offline) |
 | M8 | Scenario + Skill engine (quality gates) | Planned | L3 | No |
 | M9 | Gateway + channels (CLI + Web, OpenAI-compatible) | Planned | L3 | No |
 | M10 | Value Stream (H4: goal anchoring, scoring) | Planned | L3 | Partly |
@@ -219,10 +219,27 @@ back and then succeeds on a corrected round, or fails after exhausting rounds.
 **Depends on.** M3 (M5 for functional checks). External-tool checks (real
 linters/test-suites) and live model judging are a later opt-in on the M4 seam.
 
-### M7 — Memory (5-layer, production)
-**Goal.** Production memory: SQLite + FTS5 (history), vector index (semantic),
-Honcho dialectical user model, Markdown-first storage. Replaces the demo's
-in-memory simplification.
+### M7 — Memory (5-layer, production) ✅ Done
+**Goal.** Production memory replacing the demo's in-memory simplification.
+
+**Delivered.**
+- `taiyi.memory.engine` — `MemoryEngine`, all five layers over stdlib sqlite3:
+  L1 short-term session messages; L2 skill index; L3 semantic search (vector);
+  L4 Honcho dialectical user model; L5 FTS5 full-text history (auto-detects FTS5,
+  falls back to LIKE). Markdown-first: long-term memories also append to a daily
+  human-readable log; SQLite is the index over it. Persists and reopens cleanly.
+- `taiyi.memory.embedding` — `HashingEmbedder`, a deterministic, dependency-free
+  local embedder (stable md5 feature hashing) + cosine. A real embedding model
+  implements the same `Embedder` interface and is a later opt-in.
+- Runtime gained optional memory hooks: the prompt is recorded to L1, a completed
+  task is archived to L5, and the L4 user model is updated.
+- 9 tests + `examples/memory_demo.py`.
+
+**Acceptance (met).** Full-text and semantic retrieval work; the user model merges
+dialectically (dedups repeats, appends new); everything persists across reopen
+with a Markdown mirror; the runtime records to memory end-to-end.
+**Note.** The local embedder is lexical (exact-token); semantic recall improves
+when a real embedding model is plugged into the `Embedder` seam (opt-in).
 **Depends on.** M3.
 
 ### M8 — Scenario + Skill engine (quality gates)

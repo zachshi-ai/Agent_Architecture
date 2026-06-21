@@ -21,6 +21,7 @@ from taiyi.core.types import Verdict
 from taiyi.runtime.context import StepResult, TaskContext
 from taiyi.runtime.executor import Executor, MockExecutor
 from taiyi.runtime.state import TaskState
+from taiyi.memory import MemoryEngine
 from taiyi.scheduler import SchedulerEngine
 from taiyi.validation import ValidationContext, ValidationEngine
 
@@ -33,12 +34,14 @@ class TaskRuntime:
         executor: Executor | None = None,
         *,
         validator: ValidationEngine | None = None,
+        memory: MemoryEngine | None = None,
         max_rounds: int = 1,
     ):
         self.scheduler = scheduler
         self.audit = audit_log
         self.executor = executor or MockExecutor()
         self.validator = validator
+        self.memory = memory
         self.max_rounds = max(1, max_rounds)
 
     def run(
@@ -57,6 +60,8 @@ class TaskRuntime:
             session_id=session_id,
         )
         self.audit.append("task_start", task_id=ctx.task_id, prompt=prompt, scenario=scenario)
+        if self.memory is not None:
+            self.memory.add_message(session_id, "user", prompt)
 
         try:
             ctx.touch(TaskState.PARSING)
@@ -75,6 +80,7 @@ class TaskRuntime:
                         "task_completed", task_id=ctx.task_id, round=rnd,
                         steps=len(ctx.executed_steps),
                     )
+                    self._remember_completion(ctx)
                     return ctx
 
                 # Validation failed → bounce back into PDCA.
@@ -170,6 +176,17 @@ class TaskRuntime:
             final_output=ctx.final_output or "",
         )
         return self.validator.validate(vctx)
+
+    def _remember_completion(self, ctx: TaskContext) -> None:
+        if self.memory is None:
+            return
+        skill = ctx.plan.skill_name if ctx.plan else None
+        self.memory.remember(
+            f"Completed [{skill}] via {len(ctx.executed_steps)} tool(s): {ctx.prompt}",
+            tags=("task", ctx.scenario),
+            source_task_id=ctx.task_id,
+        )
+        self.memory.observe_user(f"asked for: {ctx.prompt[:60]}")
 
     @staticmethod
     def _synthesize(ctx: TaskContext) -> str:
