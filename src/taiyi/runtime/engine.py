@@ -17,6 +17,7 @@ from __future__ import annotations
 import time
 from contextlib import nullcontext
 
+from taiyi.approvals import ApprovalStore, PendingApproval
 from taiyi.core.audit import AuditLog
 from taiyi.core.types import Verdict
 from taiyi.iteration import IterationEngine
@@ -42,6 +43,7 @@ class TaskRuntime:
         value_stream: ValueStreamEngine | None = None,
         observability: Observability | None = None,
         iteration: IterationEngine | None = None,
+        approvals: ApprovalStore | None = None,
         max_rounds: int = 1,
     ):
         self.scheduler = scheduler
@@ -52,6 +54,7 @@ class TaskRuntime:
         self.value_stream = value_stream
         self.obs = observability
         self.iteration = iteration
+        self.approvals = approvals
         self.max_rounds = max(1, max_rounds)
 
     def run(
@@ -157,9 +160,17 @@ class TaskRuntime:
 
     # --- D --------------------------------------------------------------------
     def _do(self, ctx: TaskContext) -> bool:
-        """Run the plan step by step. Returns True iff every step executed."""
         assert ctx.plan is not None
-        for step in ctx.plan.steps:
+        return self._execute_steps(ctx, ctx.plan.steps, 0)
+
+    def _execute_steps(self, ctx: TaskContext, steps: list, start: int) -> bool:
+        """Gate + execute steps[start:]. Returns True iff every step executed.
+
+        On NEEDS_REVIEW, if an approval store is configured, the suspended task is
+        parked so it can be resumed; otherwise it simply suspends as before.
+        """
+        for i in range(start, len(steps)):
+            step = steps[i]
             ctx.touch(TaskState.AWAITING_PERMIT)
             permit = self.scheduler.request_permit(
                 step, ctx.scenario, user_id=ctx.user_id, task_id=ctx.task_id
@@ -192,6 +203,12 @@ class TaskRuntime:
                     "task_needs_review", task_id=ctx.task_id, tool=step.tool,
                     approval_id=permit.approval_id,
                 )
+                if self.approvals is not None and permit.approval_id:
+                    self.approvals.add(PendingApproval(
+                        approval_id=permit.approval_id, task_id=ctx.task_id, tool=step.tool,
+                        reason=permit.reason, scenario=ctx.scenario, ctx=ctx,
+                        held_index=i, steps=list(steps),
+                    ))
                 return False
 
             ctx.touch(TaskState.EXECUTING)
@@ -206,6 +223,54 @@ class TaskRuntime:
                 return False
 
         return True
+
+    def resume(self, approval_id: str, *, approve: bool) -> TaskContext:
+        """Resume (or reject) a task suspended for human review."""
+        if self.approvals is None:
+            raise RuntimeError("no approval store configured")
+        pending = self.approvals.get(approval_id)
+        if pending is None:
+            raise KeyError(f"unknown approval: {approval_id}")
+        ctx: TaskContext = pending.ctx
+        self.approvals.remove(approval_id)
+
+        if not approve:
+            ctx.touch(TaskState.REJECTED)
+            ctx.final_output = f"rejected by human reviewer (approval_id={approval_id})"
+            self.audit.append("human_rejected", task_id=ctx.task_id, approval_id=approval_id)
+            return ctx
+
+        # Approved: execute the held step (human override of the review), then
+        # continue gating the remaining steps normally.
+        self.audit.append("human_approved", task_id=ctx.task_id, approval_id=approval_id)
+        held_step = pending.steps[pending.held_index]
+        held_sr = ctx.step_results[-1]
+        ctx.touch(TaskState.EXECUTING)
+        result = self.executor.execute(held_step)
+        held_sr.verdict = "ALLOW(human)"
+        held_sr.executed = True
+        held_sr.output = result.output
+        self.audit.append("step_executed", task_id=ctx.task_id, tool=held_step.tool, ok=result.ok,
+                          approved_by="human")
+        if not result.ok:
+            ctx.error = f"step failed: {held_step.tool}: {result.output}"
+            ctx.touch(TaskState.FAILED)
+            return ctx
+
+        if not self._execute_steps(ctx, pending.steps, pending.held_index + 1):
+            return ctx  # re-suspended / rejected / failed downstream
+
+        ctx.final_output = self._synthesize(ctx)
+        vr = self._validate(ctx)
+        if vr is None or vr.passed:
+            ctx.touch(TaskState.COMPLETED)
+            self.audit.append("task_completed", task_id=ctx.task_id, steps=len(ctx.executed_steps))
+            self._remember_completion(ctx)
+        else:
+            ctx.validation_summary = vr.summary
+            ctx.error = f"validation failed after resume: {vr.summary}"
+            ctx.touch(TaskState.FAILED)
+        return ctx
 
     # --- C -------------------------------------------------------------------
     def _validate(self, ctx: TaskContext):

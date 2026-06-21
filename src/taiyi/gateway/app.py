@@ -65,6 +65,10 @@ class GatewayApp:
             return self._chat(payload)
         if method == "POST" and path == "/v1/review":
             return self._review(payload)
+        if method == "GET" and path == "/v1/approvals":
+            return self._list_approvals()
+        if method == "POST" and path == "/v1/approvals/resolve":
+            return self._resolve_approval(payload)
         return 404, {"error": "not found"}
 
     # --- routes --------------------------------------------------------------
@@ -95,6 +99,24 @@ class GatewayApp:
             return 400, {"error": "missing subject"}
         result = self.gateway.committee.review(subject, payload.get("context") or {})
         return 200, result.to_dict()
+
+    def _list_approvals(self) -> tuple[int, dict]:
+        if self.gateway.approvals is None:
+            return 404, {"error": "approvals not enabled"}
+        return 200, {"pending": [p.summary() for p in self.gateway.approvals.list()]}
+
+    def _resolve_approval(self, payload: dict) -> tuple[int, dict]:
+        if self.gateway.approvals is None:
+            return 404, {"error": "approvals not enabled"}
+        approval_id = payload.get("approval_id")
+        decision = payload.get("decision")
+        if not approval_id or decision not in ("approve", "reject"):
+            return 400, {"error": "need approval_id and decision=approve|reject"}
+        try:
+            ctx = self.gateway.runtime.resume(approval_id, approve=(decision == "approve"))
+        except KeyError:
+            return 404, {"error": f"unknown approval: {approval_id}"}
+        return 200, task_summary(ctx)
 
     @staticmethod
     def _identity(headers) -> str:

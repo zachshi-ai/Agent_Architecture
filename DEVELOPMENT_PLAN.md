@@ -53,6 +53,7 @@ Phase 0 left us at **L1→L2**; this plan drives toward **L4 (closed loop)**.
 | **M14** | **MCP server + channel adapter + Skill market** | ✅ **Done** | L4 | No (live channels = opt-in) |
 | **M15** | **Configuration & deployment (taiyi.yaml + Docker)** | ✅ **Done** | L4 | No |
 | **M16** | **Iterative agent loop (reason → act → observe)** | ✅ **Done** | L4 | No (live LLM = opt-in) |
+| **M17** | **Human approval & resume (HITL)** | ✅ **Done** | L4 | No |
 
 > Rough phase mapping: **M1–M5 = Phase 1** (trustworthy single-task vertical
 > slice with a real model), **M6–M9 = Phase 2**, **M10–M12 = Phase 3**,
@@ -369,6 +370,27 @@ became a permanent check; a repeated shape sediments into a gated, production-
 eligible auto-generated skill; the validator gets a regression set with
 false-pass/false-block tracking. **Maturity → L4 (closed loop).**
 **Depends on.** M6, M8, M11.
+
+### M17 — Human approval & resume (HITL) ✅ Done
+**Goal.** Close the human-in-the-loop story: a `NEEDS_REVIEW` task can be approved
+and **resumed from where it stopped**, not just abandoned.
+
+**Delivered.**
+- `taiyi.approvals` — `ApprovalStore` + `PendingApproval` (in-memory; no runtime
+  import, so no cycle). The runtime parks a suspended task here keyed by approval id.
+- `TaskRuntime.resume(approval_id, approve=…)` — on approve, executes the held step
+  (a human override of the review), then continues gating the remaining steps and
+  validates → COMPLETED; on reject, marks REJECTED. Steps already done are kept.
+  A downstream step that needs review re-suspends with a fresh approval (chained).
+- Gateway `GET /v1/approvals` (list pending) and `POST /v1/approvals/resolve`.
+- 4 tests + `examples/approval_demo.py`.
+
+**Acceptance (met).** A weekly-report task suspends at the outbound notify (keeping
+the completed query), shows up in the pending list, and resumes to COMPLETED on
+approval; rejection marks it REJECTED; an unknown approval id errors; the full
+flow works over the gateway endpoints.
+**Note.** In-process store; persisting approvals to disk for resume-across-restart
+is a small later refinement. **Depends on.** M3, M9.
 
 ### M16 — Iterative agent loop ✅ Done
 **Goal.** Turn plan-once execution into a real agent: reason → act → observe →
