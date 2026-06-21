@@ -19,6 +19,7 @@ from contextlib import nullcontext
 
 from taiyi.core.audit import AuditLog
 from taiyi.core.types import Verdict
+from taiyi.iteration import IterationEngine
 from taiyi.memory import MemoryEngine
 from taiyi.observability import Observability
 from taiyi.runtime.context import StepResult, TaskContext
@@ -40,6 +41,7 @@ class TaskRuntime:
         memory: MemoryEngine | None = None,
         value_stream: ValueStreamEngine | None = None,
         observability: Observability | None = None,
+        iteration: IterationEngine | None = None,
         max_rounds: int = 1,
     ):
         self.scheduler = scheduler
@@ -49,6 +51,7 @@ class TaskRuntime:
         self.memory = memory
         self.value_stream = value_stream
         self.obs = observability
+        self.iteration = iteration
         self.max_rounds = max(1, max_rounds)
 
     def run(
@@ -126,6 +129,8 @@ class TaskRuntime:
         return trace.span(name) if trace is not None else nullcontext()
 
     def _finish(self, ctx: TaskContext, start: float) -> None:
+        if self.iteration is not None:
+            self.iteration.record(ctx)  # L5: feed the OODA outer loop
         if self.obs is None:
             return
         self.obs.task_state.inc(state=ctx.state.value)

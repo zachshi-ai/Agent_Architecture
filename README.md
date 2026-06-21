@@ -30,12 +30,16 @@ model **cannot bypass**, rather than rules it is merely asked to remember.
 
 ## Current status
 
-**Modules 1–11 are built — a governed, validated agent with memory, scenarios,
-gated skills, a gateway (CLI + HTTP), value-stream alignment, and observability, at
-maturity level L3.** A request enters via the CLI or HTTP, is anchored to a business goal, matched
-to a scenario, planned (rule- or LLM-driven), gated step-by-step by governance,
-executed for real but sandboxed only when cleared, independently validated (a
-failed check bounces it back), scored for value contribution, and remembered. M1
+**Modules 1–12 are built — the full core, a closed-loop Agent OS at maturity level
+L4.** Every core layer of the architecture is implemented and tested (109 tests).
+A request enters via the CLI or HTTP, is anchored to a business goal, matched to a
+scenario, planned (rule- or LLM-driven), gated step-by-step by governance, executed
+for real but sandboxed only when cleared, independently validated (a failed check
+bounces it back), scored for value contribution, traced/metered, remembered, and
+fed to the OODA outer loop — which can turn a recurring failure into a permanent
+governance check and sediment repeated work into a gated skill.
+
+The layers: M1
 Governance Core (rules-as-data, fail-closed, audit log); M2 Scheduler + boundary
 (no execution capability; permits only); M3 Task Runtime (PDCA loop + state
 machine); M4 LLM layer offline-first (a model **cannot bypass governance**; live
@@ -46,10 +50,15 @@ M8 Scenario + Skill engine (scenarios as data; **no skill enters production with
 a passing quality gate**); M9 Gateway (stdlib HTTP + CLI, auth/rate-limit,
 OpenAI-compatible endpoint); M10 Value Stream (dual-mode goal anchoring, value-
 contribution scoring, bottleneck detection); M11 Observability (per-task traces,
-Prometheus `/metrics`, structured logs). See the roadmap for what's next. (Phase 0's
-demo remains under `demo/` as reference.)
+Prometheus `/metrics`, structured logs); M12 Iteration/OODA (trajectory analysis,
+human-approved rule patches, gated skill auto-generation, validator regression set).
+What remains is deferred breadth — see the roadmap. (Phase 0's demo remains under
+`demo/` as reference.)
 
 ```bash
+# Iteration/OODA: a failure becomes a permanent check; repeated work becomes a skill
+python3 examples/iteration_demo.py
+
 # Observability: per-task traces, Prometheus metrics, structured logs
 python3 examples/observability_demo.py
 

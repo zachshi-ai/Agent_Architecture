@@ -15,6 +15,7 @@ from pathlib import Path
 
 from taiyi.core.audit import AuditLog
 from taiyi.governance import GovernanceEngine, LocalPermitClient
+from taiyi.iteration import IterationEngine
 from taiyi.memory import MemoryEngine
 from taiyi.observability import Observability
 from taiyi.runtime import TaskContext, TaskRuntime
@@ -35,12 +36,14 @@ class Gateway:
         skills: SkillRegistry,
         memory: MemoryEngine,
         observability: Observability | None = None,
+        iteration: IterationEngine | None = None,
     ):
         self.runtime = runtime
         self.matcher = scenario_matcher
         self.skills = skills
         self.memory = memory
         self.obs = observability
+        self.iteration = iteration
 
     def submit(
         self,
@@ -67,6 +70,7 @@ def build_gateway(
     scheduler = SchedulerEngine(LocalPermitClient(governance))
     memory = MemoryEngine(base)
     observability = Observability()
+    iteration = IterationEngine()
     runtime = TaskRuntime(
         scheduler,
         audit_log=audit,
@@ -75,6 +79,7 @@ def build_gateway(
         memory=memory,
         value_stream=ValueStreamEngine(),
         observability=observability,
+        iteration=iteration,
         max_rounds=max_rounds,
     )
 
@@ -88,4 +93,5 @@ def build_gateway(
         skills=skills,
         memory=memory,
         observability=observability,
+        iteration=iteration,
     )

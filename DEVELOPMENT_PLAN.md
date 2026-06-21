@@ -48,7 +48,7 @@ Phase 0 left us at **L1→L2**; this plan drives toward **L4 (closed loop)**.
 | **M9** | **Gateway + channels (CLI + HTTP, OpenAI-compatible)** | ✅ **Done** | L3 | No |
 | **M10** | **Value Stream (H4: goal anchoring, scoring)** | ✅ **Done** | L3 | No (offline) |
 | **M11** | **Observability (H3: traces, metrics, logs)** | ✅ **Done** | L3 | No |
-| M12 | Iteration / OODA (L5) + Skill auto-generation | Planned | **L4** | Partly |
+| **M12** | **Iteration / OODA (L5) + Skill auto-generation** | ✅ **Done** | **L4** | No (offline) |
 | M13 | Multi-agent (expert matrix + arbitration) | Deferred | L4 | Yes |
 | M14 | Channel breadth + MCP server + Skill market | Deferred | L4 | Yes |
 
@@ -342,11 +342,30 @@ the verdict/state/duration metrics; the gateway `/metrics` endpoint returns text
 with the dependency-light posture; an OTLP/Prometheus-client exporter is an opt-in.
 **Depends on.** M3.
 
-### M12 — Iteration / OODA (L5) + Skill auto-generation
-**Goal.** Close the loop: trajectory analysis, rule-patch suggestions (human
-approved), and Skill sedimentation after N repeats (sandbox-verified, gated).
-**Acceptance.** A new failure class can become a permanent check; the validator
-gets a regression set. **Maturity → L4.**
+### M12 — Iteration / OODA (L5) + Skill auto-generation ✅ Done
+**Goal.** Close the loop: trajectory analysis, human-approved rule patches, gated
+skill auto-generation, and the validator regression set. Takes the build to L4.
+
+**Delivered.**
+- `taiyi.iteration.trajectory` — `TrajectoryStore` records each finished task and
+  surfaces failure classes and repeated skill-less task shapes.
+- `taiyi.iteration.rule_patcher` — turns a recurring failure into a
+  `RulePatchSuggestion` (rule-as-data, M1 schema); `approve()` writes the YAML,
+  which governance loads read-only. Human-gated — nothing auto-mutates live rules.
+- `taiyi.iteration.skill_generator` — drafts an `auto_generated` skill with a
+  complete quality gate from a repeated tool sequence; enters the sandbox, needs
+  human approval to be promoted to managed.
+- `taiyi.iteration.regression` — accumulates labelled validation cases and
+  calibrates a model judge against them over time.
+- `IterationEngine` (OODA) is fed by the runtime on every finished task; wired
+  into the gateway.
+- 6 tests + `examples/iteration_demo.py`.
+
+**Acceptance (met).** A recurring failure produces a suggestion that, once
+approved, makes governance return NEEDS_REVIEW for that tool — a new failure class
+became a permanent check; a repeated shape sediments into a gated, production-
+eligible auto-generated skill; the validator gets a regression set with
+false-pass/false-block tracking. **Maturity → L4 (closed loop).**
 **Depends on.** M6, M8, M11.
 
 ### M13 — Multi-agent (expert matrix + arbitration)  *(deferred)*
