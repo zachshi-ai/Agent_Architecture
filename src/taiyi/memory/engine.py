@@ -31,7 +31,10 @@ class MemoryEngine:
             (self.base / "memory").mkdir(parents=True, exist_ok=True)
             db_path = str(self.base / "taiyi.db")
 
-        self.conn = sqlite3.connect(db_path)
+        # check_same_thread=False so the engine can serve a request handler that
+        # runs in a server thread; the stdlib HTTPServer processes one request at
+        # a time, so there is no concurrent-write hazard here.
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.embedder = embedder or HashingEmbedder()
         self.fts = self._detect_fts5()

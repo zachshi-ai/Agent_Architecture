@@ -45,7 +45,7 @@ Phase 0 left us at **L1→L2**; this plan drives toward **L4 (closed loop)**.
 | **M6** | **Validation Engine (L4, per-task checklists)** | ✅ **Done** | **L3** | No (offline) |
 | **M7** | **Memory (5-layer: SQLite/FTS5/vector/Honcho)** | ✅ **Done** | L3 | No (offline) |
 | **M8** | **Scenario + Skill engine (quality gates)** | ✅ **Done** | L3 | No |
-| M9 | Gateway + channels (CLI + Web, OpenAI-compatible) | Planned | L3 | No |
+| **M9** | **Gateway + channels (CLI + HTTP, OpenAI-compatible)** | ✅ **Done** | L3 | No |
 | M10 | Value Stream (H4: goal anchoring, scoring) | Planned | L3 | Partly |
 | M11 | Observability (H3: OpenTelemetry, metrics) | Planned | L3 | No |
 | M12 | Iteration / OODA (L5) + Skill auto-generation | Planned | **L4** | Partly |
@@ -264,9 +264,33 @@ passes its gate; scenario matching routes the founding prompts correctly and fal
 back to default. Running a gate's verification cases is deferred to M12.
 **Depends on.** M2, M7.
 
-### M9 — Gateway + channels (CLI + Web)
-**Goal.** FastAPI gateway (auth, rate limit, session), a real CLI, a minimal web
-console, and an OpenAI-compatible `/v1/chat/completions` endpoint.
+### M9 — Gateway + channels (CLI + HTTP) ✅ Done
+**Goal.** A single entry point that wires the whole stack, with auth, rate limit,
+session, an OpenAI-compatible endpoint, and a real CLI.
+
+**Delivered.**
+- `taiyi.gateway.core` — `build_gateway` assembles governance → scheduler →
+  runtime with memory, validation, scenarios, and the gated skill catalog over one
+  audit chain; `Gateway.submit` matches a scenario when none is given. Defaults are
+  safe/offline (keyword planner, mock executor); the live planner/sandbox executor
+  swap in per deployment.
+- `taiyi.gateway.app` — transport-agnostic `GatewayApp.handle()` (routing, auth,
+  rate limit) returning `(status, dict)`; routes `/healthz`, `/v1/tasks`, and an
+  OpenAI-compatible `/v1/chat/completions`.
+- `taiyi.gateway.auth` — opt-in Bearer-token auth + sliding-window rate limiter.
+- `taiyi.gateway.server` — a stdlib `http.server` transport (no framework dep).
+- `taiyi.cli` — `taiyi run` / `taiyi serve` (registered as a console script).
+- 13 tests (incl. a real HTTP round trip on an ephemeral port) + `examples/gateway_demo.py`.
+
+**Decision.** Built on the **standard library** (`http.server`) rather than
+FastAPI/uvicorn, to keep the dependency footprint minimal and CI simple. The
+design names FastAPI; a FastAPI transport can wrap the same `GatewayApp` later
+without changing the app logic. A browser web console is deferred (the HTTP +
+OpenAI-compatible API already covers programmatic and chat-client access).
+**Acceptance (met).** Tasks submit over HTTP and via the CLI; governance still
+applies through the gateway (identity override → REJECTED); auth refuses missing
+tokens (401) and the rate limiter returns 429; OpenAI clients get a valid
+chat-completion shape.
 **Depends on.** M3.
 
 ### M10 — Value Stream (H4)
