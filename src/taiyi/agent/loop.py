@@ -19,6 +19,7 @@ from contextlib import nullcontext
 
 from taiyi.core.audit import AuditLog
 from taiyi.core.types import Verdict
+from taiyi.approvals import ApprovalStore, PendingApproval
 from taiyi.llm.base import LLMMessage, LLMProvider
 from taiyi.runtime.context import StepResult, TaskContext
 from taiyi.runtime.executor import Executor, MockExecutor
@@ -47,6 +48,7 @@ class AgentRuntime:
         value_stream=None,
         observability=None,
         iteration=None,
+        approvals: ApprovalStore | None = None,
         max_steps: int = 8,
         system_prompt: str | None = None,
         tool_names: list[str] | None = None,
@@ -60,6 +62,7 @@ class AgentRuntime:
         self.value_stream = value_stream
         self.obs = observability
         self.iteration = iteration
+        self.approvals = approvals
         self.max_steps = max(1, max_steps)
         self.system = system_prompt or DEFAULT_SYSTEM
         self.tool_names = tool_names
@@ -144,6 +147,17 @@ class AgentRuntime:
                 ctx.approval_id = permit.approval_id
                 ctx.final_output = f"suspended for human review (approval_id={permit.approval_id}): {permit.reason}"
                 self.audit.append("task_needs_review", task_id=ctx.task_id, tool=call.tool, approval_id=permit.approval_id)
+                if self.approvals is not None and permit.approval_id:
+                    # Park the live context AND the conversation so resume can
+                    # continue the ReAct loop from exactly here. The held step
+                    # is the last one in ctx.step_results (the one that needed
+                    # review); held_index records its position.
+                    self.approvals.add(PendingApproval(
+                        approval_id=permit.approval_id, task_id=ctx.task_id,
+                        tool=call.tool, reason=permit.reason, scenario=ctx.scenario,
+                        ctx=ctx, held_index=len(ctx.step_results) - 1, steps=[],
+                        messages=list(messages),
+                    ))
                 return
 
             ctx.touch(TaskState.EXECUTING)
@@ -163,6 +177,90 @@ class AgentRuntime:
         ctx.error = f"step budget ({self.max_steps}) exhausted"
         ctx.touch(TaskState.FAILED)
         self.audit.append("task_failed", task_id=ctx.task_id, error=ctx.error)
+
+    def resume(self, approval_id: str, *, approve: bool) -> TaskContext:
+        """Resume (or reject) an agent task suspended for human review.
+
+        Mirrors TaskRuntime.resume's contract but for the ReAct loop: a human
+        override of a NEEDS_REVIEW does NOT bypass governance. The held step is
+        re-checked against governance before it is allowed to run — if the rule
+        set has since turned it into a hard DENY, resume refuses. Only then does
+        the loop continue feeding results back to the model.
+        """
+        if self.approvals is None:
+            raise RuntimeError("no approval store configured")
+        pending = self.approvals.get(approval_id)
+        if pending is None:
+            raise KeyError(f"unknown approval: {approval_id}")
+        ctx: TaskContext = pending.ctx
+        self.approvals.remove(approval_id)
+
+        if not approve:
+            ctx.touch(TaskState.REJECTED)
+            ctx.final_output = f"rejected by human reviewer (approval_id={approval_id})"
+            self.audit.append("human_rejected", task_id=ctx.task_id, approval_id=approval_id)
+            self._finish(ctx, time.time())
+            return ctx
+
+        # Human approved — but governance gets the final word on the held step.
+        held_sr = ctx.step_results[pending.held_index]
+        held_step = held_sr.step
+        self.audit.append("human_approved", task_id=ctx.task_id, approval_id=approval_id)
+        repermit = self.scheduler.request_permit(
+            held_step, ctx.scenario, user_id=ctx.user_id, task_id=ctx.task_id
+        )
+        self.audit.append(
+            "step_repermited", task_id=ctx.task_id, tool=held_step.tool,
+            verdict=repermit.verdict.value, approved_by="human",
+        )
+        if repermit.verdict is Verdict.DENY:
+            held_sr.verdict = "DENY(human-resubmit)"
+            held_sr.reason = repermit.reason
+            held_sr.matched_rule_id = repermit.matched_rule_id
+            ctx.touch(TaskState.REJECTED)
+            ctx.final_output = (
+                f"human approved, but governance now denies {held_step.tool!r} "
+                f"({repermit.reason}); step not executed"
+            )
+            self.audit.append("task_rejected", task_id=ctx.task_id, tool=held_step.tool,
+                              reason=repermit.reason)
+            self._finish(ctx, time.time())
+            return ctx
+
+        # Re-check passed (ALLOW or still NEEDS_REVIEW-but-human-overrode). Execute
+        # the held step, feed its result back, and let the loop continue reasoning.
+        ctx.touch(TaskState.EXECUTING)
+        result = self.executor.execute(held_step)
+        held_sr.verdict = "ALLOW(human)"
+        held_sr.executed = True
+        held_sr.output = result.output
+        self.audit.append("step_executed", task_id=ctx.task_id, tool=held_step.tool,
+                          ok=result.ok, approved_by="human")
+
+        if not result.ok:
+            ctx.error = f"step failed: {held_step.tool}: {result.output}"
+            ctx.touch(TaskState.FAILED)
+            self.audit.append("task_failed", task_id=ctx.task_id, error=ctx.error)
+            self._finish(ctx, time.time())
+            return ctx
+
+        # Rebuild the conversation: the suspended messages, plus the held call
+        # and its freshly observed result, then continue the ReAct loop.
+        messages: list[LLMMessage] = list(pending.messages or [])
+        messages.append(LLMMessage("assistant", f"tool_call: {held_step.tool} {held_step.args}"))
+        messages.append(LLMMessage("tool", result.output))
+
+        trace = self.obs.tracer.start(ctx.task_id) if self.obs else None
+        try:
+            with self._span(trace, "agent_task"):
+                self._loop(ctx, messages, trace)
+        except Exception as e:  # noqa: BLE001
+            ctx.error = f"{type(e).__name__}: {e}"
+            ctx.touch(TaskState.FAILED)
+            self.audit.append("task_failed", task_id=ctx.task_id, error=ctx.error)
+
+        self._finish(ctx, time.time())
+        return ctx
 
     # --- shared helpers ------------------------------------------------------
     @staticmethod

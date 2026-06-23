@@ -17,6 +17,25 @@ sandbox_dir: ./state/sandbox
 
 max_rounds: 1              # PDCA correction rounds before a validation failure is terminal
 
+# Runtime shape:
+#   agent     — ReAct loop: the model proposes one tool call at a time, governance
+#               gates it, the result is fed back, and it decides the next step.
+#               This is the default and the "highest decision-maker" path.
+#   workflow  — plan-once: a planner emits a fixed plan that is then cleared and
+#               executed step by step. Use when a task has a known fixed procedure.
+mode: agent
+
+# LLM provider seam. The system is offline-first: with provider=offline the whole
+# loop runs on deterministic offline providers (zero tokens, zero network). To
+# use a real model, set provider to one of: anthropic | openai_compat | ollama,
+# point api_key_env at the env var holding your key (the key itself never goes in
+# a config file), and fill model. NOTE: the live adapters are not wired yet — a
+# live provider slot will refuse to fabricate output until an adapter is
+# implemented and its SDK added to pyproject.toml's [live] group.
+provider: offline
+model: null                # e.g. claude-... ; null = provider default
+api_key_env: null          # e.g. ANTHROPIC_API_KEY ; null = no key source
+
 # Custom rules / scenarios / skills are MERGED with the built-ins (yours can
 # override a built-in by reusing its id/name). Drop YAML/Markdown into these dirs.
 rules_dirs: []

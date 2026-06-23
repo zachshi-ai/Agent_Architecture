@@ -25,6 +25,10 @@ class PendingApproval:
     ctx: Any              # the live TaskContext, suspended
     held_index: int       # index of the held step within the plan
     steps: list           # the full plan steps
+    # AgentRuntime has no fixed plan; it suspends mid-ReAct-loop. To resume, it
+    # needs the conversation messages so the model can continue reasoning. The
+    # plan-once TaskRuntime leaves this None (it rebuilds from held_index/steps).
+    messages: Any = None
 
     def summary(self) -> dict:
         return {

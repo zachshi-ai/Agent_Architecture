@@ -69,6 +69,11 @@ class GatewayApp:
             return self._list_approvals()
         if method == "POST" and path == "/v1/approvals/resolve":
             return self._resolve_approval(payload)
+        # OODA Act gate: list pending rule/skill suggestions and resolve them.
+        if method == "GET" and path == "/v1/review/pending":
+            return self._list_review()
+        if method == "POST" and path.startswith("/v1/review/"):
+            return self._resolve_review(path, payload)
         return 404, {"error": "not found"}
 
     # --- routes --------------------------------------------------------------
@@ -117,6 +122,34 @@ class GatewayApp:
         except KeyError:
             return 404, {"error": f"unknown approval: {approval_id}"}
         return 200, task_summary(ctx)
+
+    def _list_review(self) -> tuple[int, dict]:
+        if self.gateway.iteration is None:
+            return 404, {"error": "iteration not enabled"}
+        return 200, {"pending": [s.summary() for s in self.gateway.iteration.list_pending()]}
+
+    def _resolve_review(self, path: str, payload: dict) -> tuple[int, dict]:
+        if self.gateway.iteration is None:
+            return 404, {"error": "iteration not enabled"}
+        # path is /v1/review/{id}/approve | /v1/review/{id}/reject
+        parts = path.strip("/").split("/")
+        if len(parts) != 4 or parts[0] != "v1" or parts[1] != "review":
+            return 404, {"error": "not found"}
+        try:
+            suggestion_id = int(parts[2])
+        except ValueError:
+            return 400, {"error": "suggestion id must be an integer"}
+        action = parts[3]
+        if action not in ("approve", "reject"):
+            return 400, {"error": "action must be approve or reject"}
+        try:
+            path_written = self.gateway.resolve_review(suggestion_id, approve=(action == "approve"))
+        except KeyError:
+            return 404, {"error": f"unknown suggestion: {suggestion_id}"}
+        except RuntimeError as e:
+            return 409, {"error": str(e)}
+        return 200, {"suggestion_id": suggestion_id, "action": action,
+                     "written_to": str(path_written) if path_written else None}
 
     @staticmethod
     def _identity(headers) -> str:

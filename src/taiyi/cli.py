@@ -26,6 +26,9 @@ def _run(args) -> int:
     print(f"scenario: {ctx.scenario}")
     if ctx.plan and ctx.plan.skill_name:
         print(f"skill:    {ctx.plan.skill_name}")
+    executed = [s.step.tool for s in ctx.executed_steps]
+    if executed:
+        print(f"steps:    {' -> '.join(executed)}")
     if ctx.approval_id:
         print(f"approval: {ctx.approval_id}")
     if ctx.final_output:
@@ -61,6 +64,48 @@ def _mcp(args) -> int:
     return 0
 
 
+def _review(args) -> int:
+    """OODA Act gate: list / approve / reject auto-suggested rules & skills."""
+    gw = _gateway(args)
+    if gw.iteration is None:
+        print("iteration engine not configured")
+        return 1
+
+    if args.action == "list":
+        pending = gw.iteration.list_pending()
+        if not pending:
+            print("no pending suggestions")
+            return 0
+        for p in pending:
+            s = p.summary()
+            print(f"[{p.id}] {p.kind:6} {s.get('rule_id') or s.get('name')}")
+            if p.kind == "rule":
+                print(f"      scenario={s.get('scenario')} tool={s.get('tool')} "
+                      f"occurrences={s.get('occurrences')}")
+                print(f"      {s.get('rationale')}")
+            else:
+                print(f"      scenario={s.get('scenario')} tools={s.get('tools')} "
+                      f"occurrences={s.get('occurrences')}")
+        return 0
+
+    # approve / reject <id>
+    try:
+        if args.action == "approve":
+            path = gw.resolve_review(args.id, approve=True)
+            print(f"approved #{args.id} → written to {path}")
+            print("(restart taiyi for governance/skills to load the new rule/skill)")
+        else:
+            gw.resolve_review(args.id, approve=False)
+            print(f"rejected #{args.id}")
+    except KeyError:
+        print(f"unknown suggestion: #{args.id}")
+        return 1
+    except RuntimeError as e:
+        print(f"cannot approve: {e}")
+        return 1
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="taiyi", description="Taiyi / The One — Agent OS")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -84,6 +129,13 @@ def main(argv=None) -> int:
     mcp.add_argument("--base-dir", default=None)
     mcp.add_argument("--config", default=None, help="path to taiyi.yaml")
     mcp.set_defaults(func=_mcp)
+
+    review = sub.add_parser("review", help="review OODA-suggested rules & skills")
+    review.add_argument("action", choices=["list", "approve", "reject"])
+    review.add_argument("id", nargs="?", type=int, help="suggestion id (for approve/reject)")
+    review.add_argument("--base-dir", default=None)
+    review.add_argument("--config", default=None, help="path to taiyi.yaml")
+    review.set_defaults(func=_review)
 
     args = parser.parse_args(argv)
     return args.func(args)

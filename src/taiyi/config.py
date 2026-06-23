@@ -29,6 +29,12 @@ class TaiyiConfig:
     scenarios_dirs: tuple[str, ...] = ()
     skills_dirs: tuple[str, ...] = ()
     log_level: str = "info"
+    # --- runtime shape -------------------------------------------------------
+    mode: str = "agent"                  # agent (ReAct, default) | workflow (plan-once)
+    # --- LLM provider seam (opt-in; offline until a live adapter is wired) ---
+    provider: str = "offline"            # offline | anthropic | openai_compat | ollama
+    model: str | None = None             # model id; None → provider default
+    api_key_env: str | None = None       # name of env var holding the key (never the key itself)
 
 
 def load_config(path: str | Path | None = None) -> TaiyiConfig:
@@ -66,4 +72,12 @@ def _apply_env(cfg: TaiyiConfig) -> TaiyiConfig:
         over["max_rounds"] = int(env["TAIYI_MAX_ROUNDS"])
     if env.get("TAIYI_AUTH_TOKENS"):
         over["auth_tokens"] = tuple(t for t in env["TAIYI_AUTH_TOKENS"].split(",") if t)
+    if env.get("TAIYI_MODE"):
+        over["mode"] = env["TAIYI_MODE"]
+    if env.get("TAIYI_PROVIDER"):
+        over["provider"] = env["TAIYI_PROVIDER"]
+    if env.get("TAIYI_MODEL"):
+        over["model"] = env["TAIYI_MODEL"]
+    if env.get("TAIYI_API_KEY_ENV"):
+        over["api_key_env"] = env["TAIYI_API_KEY_ENV"]
     return replace(cfg, **over)
