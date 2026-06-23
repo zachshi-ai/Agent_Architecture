@@ -19,6 +19,7 @@ from taiyi.llm.base import (
     LLMResponse,
     ToolCall,
 )
+from taiyi.llm.live import make_provider
 from taiyi.llm.offline import KeywordOfflineProvider, ScriptedProvider
 
 __all__ = [
@@ -29,4 +30,5 @@ __all__ = [
     "ToolCall",
     "KeywordOfflineProvider",
     "ScriptedProvider",
+    "make_provider",
 ]

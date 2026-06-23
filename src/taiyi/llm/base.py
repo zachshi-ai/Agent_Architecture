@@ -13,9 +13,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-# When a live provider is enabled, default to a current, capable Claude model.
-# Configurable per deployment; unused until a live provider is built.
-DEFAULT_LIVE_MODEL = "claude-fable-5"
+# A neutral placeholder. When a live provider is enabled, the deployment's config
+# selects the real model id (e.g. an Anthropic/OpenAI/Ollama model name). This
+# constant only exists so the LLMProvider seam has a documented default; it never
+# names a real, callable model until a live adapter is implemented.
+DEFAULT_LIVE_MODEL = "taiyi-default"
 
 
 @dataclass(frozen=True)

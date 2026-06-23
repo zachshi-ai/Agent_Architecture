@@ -22,6 +22,10 @@ taiyi = "taiyi.cli:main"
 dev = [
     "pytest>=7.4",
 ]
+# Live LLM provider adapters. Empty for now — populate when a real adapter is
+# wired (e.g. live = ["anthropic>=0.40"] or live = ["openai>=1.40", "httpx"]).
+# Until then the offline providers drive the whole loop with zero tokens.
+live = []
 
 [tool.setuptools.packages.find]
 where = ["src"]

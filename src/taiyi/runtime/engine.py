@@ -240,11 +240,35 @@ class TaskRuntime:
             self.audit.append("human_rejected", task_id=ctx.task_id, approval_id=approval_id)
             return ctx
 
-        # Approved: execute the held step (human override of the review), then
-        # continue gating the remaining steps normally.
+        # Approved: re-check the held step against governance before executing.
+        # A human override of the review does NOT bypass governance — it only
+        # upgrades the NEEDS_REVIEW to a re-evaluation. If the rule set has
+        # tightened while the task was suspended (the step is now a hard DENY,
+        # not merely a review), the step is refused. This closes the one place
+        # where an execute previously had no preceding permit.
         self.audit.append("human_approved", task_id=ctx.task_id, approval_id=approval_id)
         held_step = pending.steps[pending.held_index]
         held_sr = ctx.step_results[-1]
+        repermit = self.scheduler.request_permit(
+            held_step, ctx.scenario, user_id=ctx.user_id, task_id=ctx.task_id
+        )
+        self.audit.append(
+            "step_repermited", task_id=ctx.task_id, tool=held_step.tool,
+            verdict=repermit.verdict.value, approved_by="human",
+        )
+        if repermit.verdict is Verdict.DENY:
+            held_sr.verdict = "DENY(human-resubmit)"
+            held_sr.reason = repermit.reason
+            held_sr.matched_rule_id = repermit.matched_rule_id
+            ctx.touch(TaskState.REJECTED)
+            ctx.final_output = (
+                f"human approved, but governance now denies {held_step.tool!r} "
+                f"({repermit.reason}); step not executed"
+            )
+            self.audit.append("task_rejected", task_id=ctx.task_id, tool=held_step.tool,
+                              reason=repermit.reason)
+            return ctx
+
         ctx.touch(TaskState.EXECUTING)
         result = self.executor.execute(held_step)
         held_sr.verdict = "ALLOW(human)"
