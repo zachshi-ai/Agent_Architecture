@@ -15,6 +15,7 @@ from taiyi.multi_agent.experts import (
     OpinionVerdict,
     builtin_experts,
 )
+from taiyi.multi_agent.permit_review import reconsider_permit
 
 __all__ = [
     "ArbitrationResult",
@@ -29,4 +30,5 @@ __all__ = [
     "MarkerExpert",
     "OpinionVerdict",
     "builtin_experts",
+    "reconsider_permit",
 ]

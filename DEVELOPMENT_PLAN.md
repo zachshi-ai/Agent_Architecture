@@ -160,12 +160,12 @@ Built offline-first per the budget decision; live providers are a later opt-in.
 **denied** (`REJECTED`, nothing executed); a benign proposed plan completes; the
 property holds regardless of provider.
 
-**Deferred to a live opt-in (needs API key + budget).** Real Anthropic /
-OpenAI-compatible / Ollama providers implementing `LLMProvider`, and the iterative
-agent loop that feeds real tool results back to the model (meaningful once M5
-makes execution real). Flip this on by supplying a key; governance behaviour does
-not change.
-**Depends on.** M3.
+**Remaining live opt-in (needs API key + budget).** The provider seam is wired:
+`make_provider(config)` returns the right adapter by config, and a live adapter
+is a single class implementing `LLMProvider.complete()` plus one SDK in the
+`[live]` optional-dependency group. The iterative agent loop (M16) is real — it
+feeds tool results back to the model — so dropping in an adapter makes the whole
+ReAct loop run live. Governance behaviour does not change. **Depends on.** M3.
 
 ### M5 — Tool Runtime (sandbox + credential isolation + SSRF) ✅ Done
 **Goal.** Real, constrained execution: the high-risk layer the gates protect.
@@ -180,7 +180,11 @@ not change.
 - `taiyi.tools.sandbox` — `SandboxExecutor` (a real `Executor`): runs shell and
   file I/O inside a sandbox dir with a scrubbed environment, screens URL tools
   through the SSRF guard, blocks path traversal, and marks not-yet-connected
-  business tools as deferred rather than faking side effects.
+  business tools as deferred rather than faking side effects. Two shell backends:
+  `local` (direct, default) and `sandbox_exec` (macOS `sandbox-exec` with a
+  deny-all profile that whitelists only sandbox-dir writes + system-binary reads
+  + TMPDIR and denies all network — kernel-enforced isolation, not a denylist).
+  Degrades to `local` off macOS.
 - Runtime now treats a failed real execution as terminal `FAILED`.
 - 17 tests + `examples/sandbox_demo.py`.
 
@@ -288,8 +292,11 @@ session, an OpenAI-compatible endpoint, and a real CLI.
 **Decision.** Built on the **standard library** (`http.server`) rather than
 FastAPI/uvicorn, to keep the dependency footprint minimal and CI simple. The
 design names FastAPI; a FastAPI transport can wrap the same `GatewayApp` later
-without changing the app logic. A browser web console is deferred (the HTTP +
-OpenAI-compatible API already covers programmatic and chat-client access).
+without changing the app logic. A **browser web UI is built** — a React SPA
+under `web/` (build output committed to `web/dist`, served same-origin by the
+gateway, zero runtime node dependency) with panels for chat/tasks, human
+approvals, OODA review, memory/metrics, and config. Static files + SPA fallback
+live in the transport layer, keeping `GatewayApp.handle`'s JSON contract pure.
 **Acceptance (met).** Tasks submit over HTTP and via the CLI; governance still
 applies through the gateway (identity override → REJECTED); auth refuses missing
 tokens (401) and the rate limiter returns 429; OpenAI clients get a valid
@@ -350,8 +357,10 @@ with the dependency-light posture; an OTLP/Prometheus-client exporter is an opt-
 skill auto-generation, and the validator regression set. Takes the build to L4.
 
 **Delivered.**
-- `taiyi.iteration.trajectory` — `TrajectoryStore` records each finished task and
-  surfaces failure classes and repeated skill-less task shapes.
+- `taiyi.iteration.trajectory` — `TrajectoryStore` (SQLite-backed, survives
+  restarts) records each finished task with a signal-rich step trail (tool,
+  args, verdict, output) and surfaces failure classes and repeated skill-less
+  task shapes.
 - `taiyi.iteration.rule_patcher` — turns a recurring failure into a
   `RulePatchSuggestion` (rule-as-data, M1 schema); `approve()` writes the YAML,
   which governance loads read-only. Human-gated — nothing auto-mutates live rules.
@@ -360,15 +369,20 @@ skill auto-generation, and the validator regression set. Takes the build to L4.
   human approval to be promoted to managed.
 - `taiyi.iteration.regression` — accumulates labelled validation cases and
   calibrates a model judge against them over time.
-- `IterationEngine` (OODA) is fed by the runtime on every finished task; wired
-  into the gateway.
-- 6 tests + `examples/iteration_demo.py`.
+- `IterationEngine` (OODA) is fed by the runtime on every finished task **and
+  automatically files Orient/Decide suggestions into a persisted `pending_review`
+  queue** every task. `approve()`/`reject()` (CLI `taiyi review` + `/v1/review/*`
+  HTTP) are the human Act gate; approved suggestions land in `base/rules/auto` /
+  `base/skills/auto`, which governance/skills load read-only on the next start.
+  This is the closed loop — last task's result changes next task's governance.
+- 13 tests + `examples/iteration_demo.py`.
 
-**Acceptance (met).** A recurring failure produces a suggestion that, once
-approved, makes governance return NEEDS_REVIEW for that tool — a new failure class
-became a permanent check; a repeated shape sediments into a gated, production-
-eligible auto-generated skill; the validator gets a regression set with
-false-pass/false-block tracking. **Maturity → L4 (closed loop).**
+**Acceptance (met).** A recurring failure produces a suggestion (auto-filed, no
+human prompting) that, once approved, makes governance return NEEDS_REVIEW for
+that tool — a new failure class became a permanent check; a repeated shape
+sediments into a gated, production-eligible auto-generated skill; trajectories
+persist across process restarts; the validator gets a regression set with
+false-pass/false-block tracking. **Maturity → L4 (closed loop, 周行不殆).**
 **Depends on.** M6, M8, M11.
 
 ### M17 — Human approval & resume (HITL) ✅ Done
@@ -451,14 +465,22 @@ alongside the built-ins; the real executor is selectable by config alone.
   same-precedence cross-domain conflict → fail closed → NEEDS_HUMAN.
 - `taiyi.multi_agent.committee` — `ExpertCommittee.review` + `reconsider_once`
   (one amendment retry; a persistent veto becomes an L5 system defect, bounded).
-- Gateway `/v1/review` endpoint; default committee wired into `build_gateway`.
-- 8 tests + `examples/multi_agent_demo.py` (reproduces the design's contract-review
+- `taiyi.multi_agent.permit_review` — `reconsider_permit()`: the one-way mapping
+  that makes the committee a **second permit gate**. It runs after governance
+  ALLOWs a step (in both runtimes) and can only tighten — ALLOW → NEEDS_REVIEW on
+  a committee veto. It never loosens a governance DENY (governance owns the
+  red-line authority; the committee only escalates to human review).
+- Gateway `/v1/review` endpoint; the same committee instance is wired into both
+  the runtime (as the second gate) and `build_gateway` (for on-demand review).
+- 14 tests + `examples/multi_agent_demo.py` (reproduces the design's contract-review
   scenario C).
 
 **Acceptance (met).** A red-line expert's veto is a one-vote pause that escalates;
 advisory experts never block; a higher-precedence veto wins a cross-level conflict;
 a same-precedence hard conflict fails closed to a human; reconsideration resolves
-an amended proposal or, if not, records a system defect.
+an amended proposal or, if not, records a system defect. As a permit gate: a
+governance-allowed step the committee vetoes is suspended for human review without
+executing; a governance DENY is never overridden by a committee approval.
 **Decision.** Built offline-first (deterministic marker experts), so it is
 zero-cost; the live multi-expert LLM path is the opt-in. **Depends on.** M3.
 

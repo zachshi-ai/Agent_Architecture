@@ -31,32 +31,40 @@ model **cannot bypass**, rather than rules it is merely asked to remember.
 ## Current status
 
 **All 14 modules are built — the complete architecture, a closed-loop Agent OS at
-maturity level L4.** Every layer is implemented and tested (129 tests).
-A request enters via the CLI or HTTP, is anchored to a business goal, matched to a
-scenario, planned (rule- or LLM-driven), gated step-by-step by governance, executed
-for real but sandboxed only when cleared, independently validated (a failed check
-bounces it back), scored for value contribution, traced/metered, remembered, and
-fed to the OODA outer loop — which can turn a recurring failure into a permanent
-governance check and sediment repeated work into a gated skill.
+maturity level L4.** Every layer is implemented and tested (198 tests).
+A request enters via the CLI, HTTP, or the bundled web UI, is anchored to a
+business goal, matched to a scenario, planned (rule- or LLM-driven), gated
+step-by-step by governance, given a second-opinion review by the expert
+committee, executed for real but sandboxed only when cleared, independently
+validated (a failed check bounces it back), scored for value contribution,
+traced/metered, remembered, and fed to the OODA outer loop — which turns a
+recurring failure into a permanent governance check and sediments repeated work
+into a gated skill. The loop is real: trajectories persist across restarts,
+suggestions are filed automatically every task, and a human approves them into
+the read-only rule/skill set on the next start.
 
 The layers: M1
 Governance Core (rules-as-data, fail-closed, audit log); M2 Scheduler + boundary
 (no execution capability; permits only); M3 Task Runtime (PDCA loop + state
-machine); M4 LLM layer offline-first (a model **cannot bypass governance**; live
-providers are an opt-in); M5 Tool Runtime (sandboxed execution, credential
-isolation, SSRF); M6 Validation Engine (cheapest-first checklists, isolated/
-calibrated model judge, bounce-back); M7 Memory (5-layer SQLite/FTS5/vector/Honcho);
-M8 Scenario + Skill engine (scenarios as data; **no skill enters production without
-a passing quality gate**); M9 Gateway (stdlib HTTP + CLI, auth/rate-limit,
-OpenAI-compatible endpoint); M10 Value Stream (dual-mode goal anchoring, value-
-contribution scoring, bottleneck detection); M11 Observability (per-task traces,
-Prometheus `/metrics`, structured logs); M12 Iteration/OODA (trajectory analysis,
-human-approved rule patches, gated skill auto-generation, validator regression set);
-M13 Multi-agent (expert matrix with red-line veto and precedence arbitration —
-collaboration with gates, not agent chat); M14 MCP server + channel adapter + Skill
-market (Taiyi callable by MCP clients, still governed; gated skill installs). Only
-live opt-ins remain (real LLM provider, real embedding model, live platform
-channels). (Phase 0's demo remains under `demo/` as reference.)
+machine); M4 LLM layer offline-first (a model **cannot bypass governance**; the
+live-provider seam is wired with a factory — drop in one adapter + API key to go
+live, no caller changes); M5 Tool Runtime (sandboxed execution, credential
+isolation, SSRF, **macOS `sandbox-exec` deny-all isolation**); M6 Validation
+Engine (cheapest-first checklists, isolated/calibrated model judge, bounce-back);
+M7 Memory (5-layer SQLite/FTS5/vector/Honcho, **multi-turn session history**);
+M8 Scenario + Skill engine (scenarios as data; **no skill enters production
+without a passing quality gate**); M9 Gateway (stdlib HTTP + CLI, auth/rate-limit,
+OpenAI-compatible endpoint, **bundled React web UI served same-origin**); M10
+Value Stream (dual-mode goal anchoring, value-contribution scoring, bottleneck
+detection); M11 Observability (per-task traces, Prometheus `/metrics`, structured
+logs); M12 Iteration/OODA (**closed loop**: SQLite-persisted trajectories,
+auto-filed suggestions, human-approved rule/skill patches, validator regression
+set); M13 Multi-agent (expert matrix with red-line veto and precedence
+arbitration — **wired as a second permit gate that only tightens**, never
+loosens a governance decision); M14 MCP server + channel adapter + Skill market
+(Taiyi callable by MCP clients, still governed; gated skill installs). The only
+remaining live opt-in is a real LLM provider adapter (the seam is ready).
+(Phase 0's demo remains under `demo/` as reference.)
 
 ### Run it yourself
 
@@ -64,8 +72,11 @@ channels). (Phase 0's demo remains under `demo/` as reference.)
 pip install .                              # installs the `taiyi` command
 cp taiyi.example.yaml taiyi.yaml           # edit: auth, executor, custom rules…
 taiyi serve --config taiyi.yaml            # HTTP gateway (+ /metrics, OpenAI API)
+# → open http://127.0.0.1:8080/ for the bundled web UI
+#     (chat/tasks, approvals, OODA review, memory/metrics, config)
 # or:  docker compose -f deploy/docker-compose.yml up
-# set `executor: sandbox` in the config for real, governed execution
+# set `executor: sandbox` + `sandbox_backend: sandbox_exec` (macOS) for real,
+#   kernel-isolated, governed execution
 ```
 
 ### Explore the layers

@@ -44,6 +44,7 @@ class TaskRuntime:
         observability: Observability | None = None,
         iteration: IterationEngine | None = None,
         approvals: ApprovalStore | None = None,
+        committee=None,
         max_rounds: int = 1,
     ):
         self.scheduler = scheduler
@@ -55,6 +56,7 @@ class TaskRuntime:
         self.obs = observability
         self.iteration = iteration
         self.approvals = approvals
+        self.committee = committee
         self.max_rounds = max(1, max_rounds)
 
     def run(
@@ -211,6 +213,30 @@ class TaskRuntime:
                     ))
                 return False
 
+            # Governance allowed the step. Run the expert committee as a second,
+            # one-way tightening gate before executing (it can escalate ALLOW →
+            # NEEDS_REVIEW but never loosen a governance decision).
+            permit = self._second_opinion(permit, step, ctx, i, steps)
+            if permit.verdict is Verdict.NEEDS_REVIEW:
+                sr.verdict = permit.verdict.value
+                sr.reason = permit.reason
+                ctx.touch(TaskState.NEEDS_REVIEW)
+                ctx.approval_id = permit.approval_id
+                ctx.final_output = (
+                    f"suspended for human review (approval_id={permit.approval_id}): {permit.reason}"
+                )
+                self.audit.append(
+                    "task_needs_review", task_id=ctx.task_id, tool=step.tool,
+                    approval_id=permit.approval_id, source="committee",
+                )
+                if self.approvals is not None and permit.approval_id:
+                    self.approvals.add(PendingApproval(
+                        approval_id=permit.approval_id, task_id=ctx.task_id, tool=step.tool,
+                        reason=permit.reason, scenario=ctx.scenario, ctx=ctx,
+                        held_index=i, steps=list(steps),
+                    ))
+                return False
+
             ctx.touch(TaskState.EXECUTING)
             result = self.executor.execute(step)
             sr.executed = True
@@ -223,6 +249,29 @@ class TaskRuntime:
                 return False
 
         return True
+
+    def _second_opinion(self, permit, step, ctx, held_index, steps):
+        """Expert committee as a second gate on a governance ALLOW (one-way tighten).
+
+        Only fires on an ALLOW. The committee can escalate to NEEDS_REVIEW; it
+        never loosens a governance DENY/NEEDS_REVIEW. See
+        ``taiyi.multi_agent.permit_review.reconsider_permit``.
+        """
+        if self.committee is None or not permit.allowed:
+            return permit
+        from taiyi.core.types import build_full_call
+        from taiyi.multi_agent import reconsider_permit
+
+        subject = build_full_call(step.tool, list(step.args))
+        arb = self.committee.review(subject, {"scenario": ctx.scenario, "task_id": ctx.task_id})
+        self.audit.append(
+            "committee_review", task_id=ctx.task_id, tool=step.tool,
+            decision=arb.decision.value, escalate=arb.escalate, conflict=arb.conflict,
+        )
+        approval_id = permit.approval_id
+        if arb.decision.value != "APPROVED" and not approval_id:
+            approval_id = f"c_{ctx.task_id}_{held_index}"
+        return reconsider_permit(permit, arb, approval_id=approval_id)
 
     def resume(self, approval_id: str, *, approve: bool) -> TaskContext:
         """Resume (or reject) a task suspended for human review."""

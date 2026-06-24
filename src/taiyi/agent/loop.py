@@ -49,6 +49,7 @@ class AgentRuntime:
         observability=None,
         iteration=None,
         approvals: ApprovalStore | None = None,
+        committee=None,
         max_steps: int = 8,
         history_limit: int = 20,
         system_prompt: str | None = None,
@@ -64,6 +65,7 @@ class AgentRuntime:
         self.obs = observability
         self.iteration = iteration
         self.approvals = approvals
+        self.committee = committee
         self.max_steps = max(1, max_steps)
         self.history_limit = max(0, history_limit)
         self.system = system_prompt or DEFAULT_SYSTEM
@@ -171,6 +173,31 @@ class AgentRuntime:
                     ))
                 return
 
+            # Governance allowed the step. Before executing, give the expert
+            # committee a second-opinion review — a one-way tightening gate. The
+            # committee can escalate ALLOW → NEEDS_REVIEW; it can never loosen a
+            # governance DENY (reconsider_permit enforces this).
+            permit = self._second_opinion(permit, step_obj, ctx)
+            if permit.verdict is Verdict.NEEDS_REVIEW:
+                # The committee escalated; update the step result and suspend.
+                sr.verdict = permit.verdict.value
+                sr.reason = permit.reason
+                ctx.touch(TaskState.NEEDS_REVIEW)
+                ctx.approval_id = permit.approval_id
+                ctx.final_output = (
+                    f"suspended for human review (approval_id={permit.approval_id}): {permit.reason}"
+                )
+                self.audit.append("task_needs_review", task_id=ctx.task_id, tool=call.tool,
+                                   approval_id=permit.approval_id, source="committee")
+                if self.approvals is not None and permit.approval_id:
+                    self.approvals.add(PendingApproval(
+                        approval_id=permit.approval_id, task_id=ctx.task_id,
+                        tool=call.tool, reason=permit.reason, scenario=ctx.scenario,
+                        ctx=ctx, held_index=len(ctx.step_results) - 1, steps=[],
+                        messages=list(messages),
+                    ))
+                return
+
             ctx.touch(TaskState.EXECUTING)
             with self._span(trace, "act", tool=call.tool):
                 result = self.executor.execute(step_obj)
@@ -188,6 +215,31 @@ class AgentRuntime:
         ctx.error = f"step budget ({self.max_steps}) exhausted"
         ctx.touch(TaskState.FAILED)
         self.audit.append("task_failed", task_id=ctx.task_id, error=ctx.error)
+
+    def _second_opinion(self, permit, step_obj, ctx):
+        """Run the expert committee as a second gate on a governance ALLOW.
+
+        Only fires when governance allowed the step (a DENY/NEEDS_REVIEW is
+        already at least as strict). The committee can only tighten — see
+        ``taiyi.multi_agent.permit_review.reconsider_permit``. Returns the
+        (possibly escalated) permit; records the arbitration in the audit log.
+        """
+        if self.committee is None or not permit.allowed:
+            return permit
+        from taiyi.core.types import build_full_call
+        from taiyi.multi_agent import reconsider_permit
+
+        subject = build_full_call(step_obj.tool, list(step_obj.args))
+        arb = self.committee.review(subject, {"scenario": ctx.scenario, "task_id": ctx.task_id})
+        self.audit.append(
+            "committee_review", task_id=ctx.task_id, tool=step_obj.tool,
+            decision=arb.decision.value, escalate=arb.escalate, conflict=arb.conflict,
+        )
+        # Generate an approval id for an escalation so the approval store can park it.
+        approval_id = permit.approval_id
+        if arb.decision.value != "APPROVED" and not approval_id:
+            approval_id = f"c_{ctx.task_id}_{len(ctx.step_results)}"
+        return reconsider_permit(permit, arb, approval_id=approval_id)
 
     def resume(self, approval_id: str, *, approve: bool) -> TaskContext:
         """Resume (or reject) an agent task suspended for human review.

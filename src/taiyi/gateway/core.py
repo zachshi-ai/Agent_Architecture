@@ -143,6 +143,11 @@ def build_gateway(
     # A workflow runtime (plan-once) needs no provider. When mode=agent but no
     # provider is supplied, we fall back to workflow so the system still runs
     # offline rather than failing to start.
+    # The expert committee is shared between the runtime (as a second-opinion
+    # gate on governance ALLOWs) and the Gateway (for the /v1/review endpoint).
+    # One instance, two consumers — so the same expert matrix reviews both at
+    # permit time and on demand.
+    committee = ExpertCommittee()
     use_agent = mode == "agent" and provider is not None
     if use_agent:
         runtime = AgentRuntime(
@@ -156,6 +161,7 @@ def build_gateway(
             observability=observability,
             iteration=iteration,
             approvals=approvals,
+            committee=committee,
         )
     else:
         runtime = TaskRuntime(
@@ -168,6 +174,7 @@ def build_gateway(
             observability=observability,
             iteration=iteration,
             approvals=approvals,
+            committee=committee,
             max_rounds=max_rounds,
         )
 
@@ -188,7 +195,7 @@ def build_gateway(
         memory=memory,
         observability=observability,
         iteration=iteration,
-        committee=ExpertCommittee(),
+        committee=committee,
         approvals=approvals,
         base_dir=str(base) if base else None,
     )
@@ -201,7 +208,7 @@ def build_gateway_from_config(config) -> Gateway:
         from taiyi.tools import SandboxExecutor
 
         sandbox = config.sandbox_dir or (str(Path(config.base_dir or ".") / "sandbox"))
-        executor = SandboxExecutor(sandbox)
+        executor = SandboxExecutor(sandbox, backend=config.sandbox_backend)
     provider = make_provider(config)  # None when offline
     return build_gateway(
         base_dir=config.base_dir,

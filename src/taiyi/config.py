@@ -24,6 +24,7 @@ class TaiyiConfig:
     auth_tokens: tuple[str, ...] = ()    # if non-empty, Bearer auth is required
     executor: str = "mock"               # mock | sandbox
     sandbox_dir: str | None = None       # working dir for the sandbox executor
+    sandbox_backend: str = "local"       # local | sandbox_exec (macOS deny-all isolation)
     max_rounds: int = 1                  # PDCA correction rounds
     rules_dirs: tuple[str, ...] = ()     # extra rule dirs, merged with built-ins
     scenarios_dirs: tuple[str, ...] = ()
@@ -102,6 +103,8 @@ def _apply_env(cfg: TaiyiConfig) -> TaiyiConfig:
         over["executor"] = env["TAIYI_EXECUTOR"]
     if env.get("TAIYI_SANDBOX_DIR"):
         over["sandbox_dir"] = env["TAIYI_SANDBOX_DIR"]
+    if env.get("TAIYI_SANDBOX_BACKEND"):
+        over["sandbox_backend"] = env["TAIYI_SANDBOX_BACKEND"]
     if env.get("TAIYI_MAX_ROUNDS"):
         over["max_rounds"] = int(env["TAIYI_MAX_ROUNDS"])
     if env.get("TAIYI_AUTH_TOKENS"):
