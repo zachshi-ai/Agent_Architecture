@@ -30,8 +30,10 @@ model **cannot bypass**, rather than rules it is merely asked to remember.
 
 ## Current status
 
-**All 14 modules are built — the complete architecture, a closed-loop Agent OS at
-maturity level L4.** Every layer is implemented and tested (198 tests).
+**All 17 modules are built — the complete architecture, a closed-loop Agent OS at
+maturity level L4.** Every layer is implemented and tested (208 tests), and a
+**real LLM runs end-to-end** (verified with DeepSeek: model → tool call →
+governance permit → sandbox exec → result fed back → final answer, COMPLETED).
 A request enters via the CLI, HTTP, or the bundled web UI, is anchored to a
 business goal, matched to a scenario, planned (rule- or LLM-driven), gated
 step-by-step by governance, given a second-opinion review by the expert
@@ -46,37 +48,59 @@ the read-only rule/skill set on the next start.
 The layers: M1
 Governance Core (rules-as-data, fail-closed, audit log); M2 Scheduler + boundary
 (no execution capability; permits only); M3 Task Runtime (PDCA loop + state
-machine); M4 LLM layer offline-first (a model **cannot bypass governance**; the
-live-provider seam is wired with a factory — drop in one adapter + API key to go
-live, no caller changes); M5 Tool Runtime (sandboxed execution, credential
-isolation, SSRF, **macOS `sandbox-exec` deny-all isolation**); M6 Validation
-Engine (cheapest-first checklists, isolated/calibrated model judge, bounce-back);
-M7 Memory (5-layer SQLite/FTS5/vector/Honcho, **multi-turn session history**);
-M8 Scenario + Skill engine (scenarios as data; **no skill enters production
-without a passing quality gate**); M9 Gateway (stdlib HTTP + CLI, auth/rate-limit,
-OpenAI-compatible endpoint, **bundled React web UI served same-origin**); M10
-Value Stream (dual-mode goal anchoring, value-contribution scoring, bottleneck
-detection); M11 Observability (per-task traces, Prometheus `/metrics`, structured
-logs); M12 Iteration/OODA (**closed loop**: SQLite-persisted trajectories,
-auto-filed suggestions, human-approved rule/skill patches, validator regression
-set); M13 Multi-agent (expert matrix with red-line veto and precedence
-arbitration — **wired as a second permit gate that only tightens**, never
-loosens a governance decision); M14 MCP server + channel adapter + Skill market
-(Taiyi callable by MCP clients, still governed; gated skill installs). The only
-remaining live opt-in is a real LLM provider adapter (the seam is ready).
-(Phase 0's demo remains under `demo/` as reference.)
+machine); M4 LLM layer (a model **cannot bypass governance**; the
+**OpenAI-compatible adapter is wired and verified** — Ollama / DeepSeek / 智谱 /
+Moonshot / OpenAI all work via one `base_url`); M5 Tool Runtime (sandboxed
+execution, credential isolation, SSRF, **macOS `sandbox-exec` deny-all
+isolation**); M6 Validation Engine (cheapest-first checklists, isolated/
+calibrated model judge, bounce-back); M7 Memory (5-layer SQLite/FTS5/vector/
+Honcho, **multi-turn session history**); M8 Scenario + Skill engine (scenarios
+as data; **no skill enters production without a passing quality gate**); M9
+Gateway (stdlib HTTP + CLI, auth/rate-limit, OpenAI-compatible endpoint,
+**bundled React web UI served same-origin**); M10 Value Stream (dual-mode goal
+anchoring, value-contribution scoring, bottleneck detection); M11 Observability
+(per-task traces, Prometheus `/metrics`, structured logs); M12 Iteration/OODA
+(**closed loop**: SQLite-persisted trajectories, auto-filed suggestions,
+human-approved rule/skill patches, validator regression set); M13 Multi-agent
+(expert matrix with red-line veto and precedence arbitration — **wired as a
+second permit gate that only tightens**, never loosens a governance decision);
+M14 MCP server + channel adapter + Skill market (Taiyi callable by MCP clients,
+still governed; gated skill installs); M15 Configuration & deployment
+(taiyi.yaml + Docker); M16 Iterative agent loop (reason → act → observe, the
+default "highest decision-maker" path); M17 Human approval & resume (HITL, with
+**resume re-checking the permit** so a rule tightened during suspend is honored).
+To go live: `pip install -e ".[live]"` (adds httpx), set provider + base_url in
+the config, restart. (Phase 0's demo remains under `demo/` as reference.)
 
 ### Run it yourself
 
 ```bash
-pip install .                              # installs the `taiyi` command
-cp taiyi.example.yaml taiyi.yaml           # edit: auth, executor, custom rules…
-taiyi serve --config taiyi.yaml            # HTTP gateway (+ /metrics, OpenAI API)
+pip install -e ".[dev]"                     # core + tests
+pip install -e ".[live]"                    # adds httpx — required for a real LLM
+cp taiyi.example.yaml taiyi.yaml            # edit: provider/base_url/model/api_key, executor, auth…
+taiyi serve --config taiyi.yaml             # HTTP gateway (+ /metrics, OpenAI API)
 # → open http://127.0.0.1:8080/ for the bundled web UI
 #     (chat/tasks, approvals, OODA review, memory/metrics, config)
 # or:  docker compose -f deploy/docker-compose.yml up
 # set `executor: sandbox` + `sandbox_backend: sandbox_exec` (macOS) for real,
 #   kernel-isolated, governed execution
+```
+
+Go live with a model — pick one, set it in `taiyi.yaml` (or the web Config
+panel), restart:
+
+```yaml
+# Local Ollama (no key needed)
+provider: ollama
+base_url: http://localhost:11434/v1
+model: qwen2.5:7b
+api_key: null
+
+# Or any OpenAI-compatible cloud model (DeepSeek / 智谱 / Moonshot / OpenAI / …)
+provider: openai_compat
+base_url: https://api.deepseek.com/v1
+model: deepseek-v4-flash
+api_key: sk-...
 ```
 
 ### Explore the layers
